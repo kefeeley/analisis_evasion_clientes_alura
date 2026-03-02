@@ -1,0 +1,180 @@
+# -----------------------------------------------------------
+# 1) IMPORTACIÓN DE LIBRERÍAS
+# -----------------------------------------------------------
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import requests
+
+sns.set(style="whitegrid")
+plt.rcParams["figure.figsize"] = (10, 6)
+
+# -----------------------------------------------------------
+# 2) EXTRACCIÓN: CARGAR JSON DESDE GITHUB
+# -----------------------------------------------------------
+url = "https://raw.githubusercontent.com/ingridcristh/challenge2-data-science-LATAM/main/TelecomX_Data.json"
+response = requests.get(url)
+data = response.json()
+
+# Normalizar JSON anidado
+df = pd.json_normalize(data)
+
+# Renombrar corto para trabajar
+df.columns = [c.replace("customer.", "").replace("phone.", "").replace("internet.", "").replace("account.", "") for c in df.columns]
+
+
+# -----------------------------------------------------------
+# 3) EXPLORE DATASET
+# -----------------------------------------------------------
+print("Shape:", df.shape)
+print("\nColumnas:\n", df.columns.tolist())
+
+df.info()
+df.describe(include="all")
+
+
+# -----------------------------------------------------------
+# 4) COMPROBACIÓN DE INCONSISTENCIAS
+# -----------------------------------------------------------
+print("\nValores nulos por columna:\n", df.isnull().sum().sort_values(ascending=False))
+
+# Tenure es cuando
+df['TotalCharges'] = pd.to_numeric(df['Charges.Total'], errors='coerce')
+
+print("\nDuplicados:", df.duplicated().sum())
+
+
+# -----------------------------------------------------------
+# 5) CORRECCIÓN DE INCONSISTENCIAS
+# -----------------------------------------------------------
+
+# Eliminar filas donde Churn es nulo (no podemos analizar churn sin eso)
+df = df[~df["Churn"].isnull()]
+
+# Rellenar nulos de TotalCharges por 0
+df['TotalCharges'].fillna(0, inplace=True)
+
+# Normalizar strings (espacios, case)
+for col in df.select_dtypes(include='object').columns:
+    df[col] = df[col].str.strip()
+
+# Quitar duplicados si los hay
+df.drop_duplicates(inplace=True)
+
+# -----------------------------------------------------------
+# 6) CREAR COLUMNA "Cuentas_Diarias"
+# -----------------------------------------------------------
+df['Cuentas_Diarias'] = df['Charges.Monthly'] / 30
+
+# -----------------------------------------------------------
+# 7) ESTANDARIZAR Y TRANSFORMAR
+# -----------------------------------------------------------
+
+# Convertir churn a binario
+df['Churn'] = df['Churn'].map({'Yes': 1, 'No': 0})
+
+# Transformar columnas si/no a 1/0
+si_no_map = {
+    'Yes': 1, 'No': 0,
+    'No internet service': 0,
+    'No phone service': 0
+}
+
+for col in ['Partner', 'Dependents', 'PhoneService', 'MultipleLines']:
+    if col in df.columns:
+        df[col] = df[col].map(si_no_map).fillna(0).astype(int)
+
+# Renombrar columnas para mejorar
+df.rename(columns={
+    'gender': 'Género',
+    'SeniorCitizen': 'Adulto_Mayor',
+    'tenure': 'Meses_Contrato',
+    'Contract': 'Contrato',
+    'PaperlessBilling': 'Sin_Factura_Papel',
+    'PaymentMethod': 'Método_Pago',
+    'Charges.Monthly': 'Cargo_Mensual',
+    'TotalCharges': 'Cargo_Total'
+}, inplace=True)
+
+# -----------------------------------------------------------
+# 8) ANÁLISIS DESCRIPTIVO
+# -----------------------------------------------------------
+
+print(df.describe())
+
+# -----------------------------------------------------------
+# 9) DISTRIBUCIÓN DE EVASIÓN
+# -----------------------------------------------------------
+plt.figure()
+df['Churn'].value_counts().plot(kind='bar')
+plt.title("Distribución de Evasión")
+plt.xticks([0,1], ["No", "Sí"], rotation=0)
+plt.show()
+
+print(df['Churn'].value_counts(normalize=True))
+
+# -----------------------------------------------------------
+# 10) EVASIÓN POR VARIABLES CATEGÓRICAS
+# -----------------------------------------------------------
+categoricas = ['Género', 'Contrato', 'Método_Pago']
+
+for cat in categoricas:
+    if cat in df.columns:
+        plt.figure()
+        sns.countplot(x=cat, hue='Churn', data=df)
+        plt.title(f"Evasión por {cat}")
+        plt.show()
+
+# -----------------------------------------------------------
+# 11) EVASIÓN POR VARIABLES NUMÉRICAS
+# -----------------------------------------------------------
+numericas = ['Meses_Contrato', 'Cargo_Mensual', 'Cuentas_Diarias']
+
+for num in numericas:
+    if num in df.columns:
+        plt.figure()
+        sns.boxplot(x='Churn', y=num, data=df)
+        plt.title(f"{num} vs Evasión")
+        plt.show()
+
+# -----------------------------------------------------------
+# 12) CORRELACIÓN ENTRE VARIABLES (OPCIONAL)
+# -----------------------------------------------------------
+plt.figure()
+sns.heatmap(df.corr(), annot=True, cmap='coolwarm', fmt=".2f")
+plt.title("Matriz de Correlación")
+plt.show()
+
+# -----------------------------------------------------------
+# 13) INFORME FINAL EJEMPLO (Markdown)
+# -----------------------------------------------------------
+
+from IPython.display import Markdown as md
+
+md("""
+# 📊 Informe de Análisis - Telecom X
+
+## 🔹 Introducción
+Este análisis tiene como objetivo identificar los principales factores asociados a la evasión de clientes (*Churn*) en Telecom X, usando técnicas de análisis exploratorio de datos (EDA).  
+
+## 🔹 Limpieza y Tratamiento
+Se normalizaron campos anidados del JSON, se corrigieron valores nulos en `Cargo_Total`, y se codificaron variables categóricas en formato numérico para facilitar el análisis.
+
+## 🔹 Análisis Exploratorio
+- La distribución de *Churn* muestra que un porcentaje relevante de clientes decide cancelar el servicio.
+- Visualizaciones por `Contrato`, `Método de Pago` y `Género` muestran patrones diferenciados en tasa de evasión.
+- Variables numéricas como `Meses_Contrato` y `Cargo_Mensual` muestran dispersión entre los grupos de churn y retenidos.
+
+## 🔹 Conclusiones e Insights
+- Clientes con contrato mensual tienden a evadir más.
+- Menor tiempo de permanencia (Meses_Contrato) está asociado con mayor churn.
+- Cargos altos mensuales y mayores cuentas diarias pueden influir en la probabilidad de evasión.
+
+## 🔹 Recomendaciones
+- Incentivar contratos de largo plazo.
+- Ofrecer beneficios para clientes nuevos con baja permanencia.
+- Revisar estrategias de precios para reducir churn asociado a altos cargos.
+
+**Fin del análisis.**
+""")
