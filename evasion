@@ -1,0 +1,224 @@
+# ============================================================
+# TELECOM X - ANÁLISIS DE EVASIÓN DE CLIENTES (CHURN)
+# ============================================================
+
+# =============================
+# 1. IMPORTACIÓN DE LIBRERÍAS
+# =============================
+
+import pandas as pd
+import numpy as np
+import requests
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+
+warnings.filterwarnings("ignore")
+sns.set(style="whitegrid")
+plt.rcParams["figure.figsize"] = (10,6)
+
+
+# ============================================================
+# 2. EXTRACCIÓN DE DATOS DESDE API
+# ============================================================
+
+print("="*60)
+print("EXTRACCIÓN DE DATOS")
+print("="*60)
+
+url = "https://raw.githubusercontent.com/alura-cursos/challenge2-data-science-LATAM/main/TelecomX_Data.json"
+
+response = requests.get(url)
+response.raise_for_status()
+
+df = pd.json_normalize(response.json())
+
+print(f"Dataset cargado correctamente: {df.shape[0]} filas y {df.shape[1]} columnas")
+print("\nMuestra inicial:")
+display(df.head())
+
+
+# ============================================================
+# 3. TRANSFORMACIÓN Y LIMPIEZA
+# ============================================================
+
+print("\n" + "="*60)
+print("TRANSFORMACIÓN Y LIMPIEZA")
+print("="*60)
+
+# 3.1 Eliminar prefijos del JSON anidado
+for prefix in ['customer.', 'phone.', 'internet.', 'account.', 'Charges.']:
+    df.columns = df.columns.str.replace(prefix, '', regex=False)
+
+df.columns = df.columns.str.lower()
+
+print("\nColumnas después de limpieza estructural:")
+print(df.columns.tolist())
+
+# 3.2 Verificar valores nulos
+print("\nValores nulos por columna:")
+print(df.isnull().sum().sort_values(ascending=False))
+
+# 3.3 Convertir columna total a numérico
+df['total'] = pd.to_numeric(df['total'], errors='coerce')
+
+# 3.4 Reemplazar nulos en total por 0
+df['total'] = df['total'].fillna(0)
+
+# 3.5 Eliminar registros con churn inválido
+df = df[df['churn'].isin(['Yes', 'No'])].copy()
+
+# 3.6 Eliminar duplicados
+df.drop_duplicates(inplace=True)
+
+print(f"\nDataset después de limpieza: {df.shape[0]} filas y {df.shape[1]} columnas")
+
+
+# ============================================================
+# 4. FEATURE ENGINEERING
+# ============================================================
+
+print("\n" + "="*60)
+print("FEATURE ENGINEERING")
+print("="*60)
+
+# 4.1 Crear columna Cuentas_Diarias (requerida por la consigna)
+df['cuentas_diarias'] = df['monthly'] / 30
+
+# 4.2 Crear variable numérica de churn
+df['churn_num'] = df['churn'].map({'Yes': 1, 'No': 0})
+
+# 4.3 Crear rango de permanencia
+bins = [-1, 12, 24, 36, 48, 60, np.inf]
+labels = ['0-1 Año','1-2 Años','2-3 Años','3-4 Años','4-5 Años','Más de 5 Años']
+
+df['rango_permanencia'] = pd.cut(df['tenure'], bins=bins, labels=labels)
+
+print("\nNuevas columnas creadas:")
+print(df[['monthly','cuentas_diarias','churn','churn_num','rango_permanencia']].head())
+
+
+# ============================================================
+# 5. ANÁLISIS DESCRIPTIVO
+# ============================================================
+
+print("\n" + "="*60)
+print("ANÁLISIS DESCRIPTIVO")
+print("="*60)
+
+print(df[['tenure','monthly','total','cuentas_diarias']].describe())
+
+
+# ============================================================
+# 6. DISTRIBUCIÓN DE EVASIÓN
+# ============================================================
+
+print("\n" + "="*60)
+print("DISTRIBUCIÓN DE EVASIÓN")
+print("="*60)
+
+print("\nProporción de churn:")
+print(df['churn'].value_counts(normalize=True))
+
+sns.countplot(data=df, x='churn')
+plt.title("Distribución General de Evasión")
+plt.show()
+
+
+# ============================================================
+# 7. EVASIÓN POR VARIABLES CATEGÓRICAS
+# ============================================================
+
+print("\n" + "="*60)
+print("EVASIÓN POR VARIABLES CATEGÓRICAS")
+print("="*60)
+
+# Tipo de contrato
+print("\nTabla cruzada - Contrato vs Churn")
+print(pd.crosstab(df['contract'], df['churn'], normalize='index'))
+
+sns.countplot(data=df, x='contract', hue='churn')
+plt.title("Evasión por Tipo de Contrato")
+plt.show()
+
+# Método de pago
+print("\nTabla cruzada - Método de Pago vs Churn")
+print(pd.crosstab(df['paymentmethod'], df['churn'], normalize='index'))
+
+sns.countplot(data=df, x='paymentmethod', hue='churn')
+plt.xticks(rotation=45)
+plt.title("Evasión por Método de Pago")
+plt.show()
+
+
+# ============================================================
+# 8. EVASIÓN POR VARIABLES NUMÉRICAS
+# ============================================================
+
+print("\n" + "="*60)
+print("EVASIÓN POR VARIABLES NUMÉRICAS")
+print("="*60)
+
+# Permanencia
+sns.boxplot(data=df, x='churn', y='tenure')
+plt.title("Permanencia vs Evasión")
+plt.show()
+
+# Cargo mensual
+sns.boxplot(data=df, x='churn', y='monthly')
+plt.title("Cargo Mensual vs Evasión")
+plt.show()
+
+# Cuentas diarias
+sns.boxplot(data=df, x='churn', y='cuentas_diarias')
+plt.title("Cuentas Diarias vs Evasión")
+plt.show()
+
+
+# ============================================================
+# 9. EXTRA – ANÁLISIS DE CORRELACIÓN
+# ============================================================
+
+print("\n" + "="*60)
+print("ANÁLISIS DE CORRELACIÓN")
+print("="*60)
+
+corr = df[['tenure','monthly','total','cuentas_diarias','churn_num']].corr()
+
+sns.heatmap(corr, annot=True, cmap='coolwarm')
+plt.title("Matriz de Correlación")
+plt.show()
+
+
+# ============================================================
+# 10. INFORME FINAL
+# ============================================================
+
+print("\n" + "="*60)
+print("INFORME FINAL")
+print("="*60)
+
+print("""
+INTRODUCCIÓN
+El objetivo del análisis fue identificar los principales factores asociados a la evasión de clientes (Churn) en Telecom X.
+
+LIMPIEZA Y TRATAMIENTO
+- Normalización de estructura JSON.
+- Conversión correcta de variables numéricas.
+- Eliminación de valores inválidos.
+- Creación de variable 'cuentas_diarias'.
+- Codificación binaria de churn.
+
+HALLAZGOS PRINCIPALES
+- Aproximadamente un 26% de los clientes presentan evasión.
+- El contrato mensual concentra la mayor tasa de abandono.
+- Clientes con menor permanencia presentan mayor probabilidad de churn.
+- Cargos mensuales altos muestran mayor dispersión en clientes que cancelan.
+- La permanencia (tenure) tiene correlación negativa con churn.
+
+RECOMENDACIONES
+1. Incentivar contratos anuales.
+2. Implementar programas de fidelización durante el primer año.
+3. Revisar estructura de precios en planes premium.
+4. Desarrollar modelo predictivo para detección temprana de riesgo.
+""")
