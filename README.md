@@ -122,10 +122,9 @@ El script descargará los datos, ejecutará el pipeline ETL y generará las visu
 # 📁 Estructura del proyecto
 
 ```
-telecom-churn-analysis
+analisis_evasion_clientes_alura/
 │
-├── telecom_pipeline.py
-├── TelecomX_Data_Limpio.csv
+├── evasion.ipynb
 └── README.md
 ```
 
